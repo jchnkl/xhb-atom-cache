@@ -5,7 +5,11 @@
 {-# LANGUAGE OverlappingInstances       #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Graphics.XHB.Atom where
+module Graphics.XHB.Atom
+    ( AtomT
+    , MonadAtom(..)
+    , runAtomT
+    ) where
 
 import Control.Applicative (Applicative)
 import Control.Monad.IO.Class (MonadIO(..))
