@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverlappingInstances       #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -13,8 +14,8 @@ module Graphics.XHB.Atom
 
 import Control.Applicative (Applicative)
 import Control.Monad.IO.Class (MonadIO(..))
-import Control.Monad.Reader (ReaderT(..), ask)
-import Control.Monad.State (StateT, evalStateT, get, modify)
+import Control.Monad.Reader (MonadReader(..), ReaderT(..), ask)
+import Control.Monad.State (StateT(..), evalStateT, get, modify)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.HashMap.Lazy (HashMap)
 import Data.Typeable (Typeable)
@@ -54,3 +55,7 @@ instance MonadIO m => MonadAtom (AtomT m) where
 
 instance (MonadAtom m, MonadTrans t, MonadIO (t m)) => MonadAtom (t m) where
     getAtom = lift . getAtom
+
+instance MonadReader r m => MonadReader r (AtomT m) where
+    ask = lift ask
+    local f (AtomT m) = AtomT . ReaderT $ local f . runReaderT m
