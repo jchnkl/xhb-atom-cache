@@ -67,11 +67,5 @@ instance MonadState s m => MonadState s (AtomT m) where
 
 instance MonadWriter w m => MonadWriter w (AtomT m) where
     tell = lift . tell
-
-    listen (AtomT m) = AtomT . ReaderT $ \r -> StateT $ \s -> do
-        ((a, s'), w) <- listen $ flip runStateT s $ runReaderT m r
-        return ((a, w), s')
-
-    pass (AtomT m) = AtomT . ReaderT $ \r -> StateT $ \s -> pass $ do
-        ((a, f), s') <- flip runStateT s $ runReaderT m r
-        return ((a, s'), f)
+    listen = AtomT . listen . unAtomT
+    pass = AtomT . pass . unAtomT
