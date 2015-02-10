@@ -15,7 +15,8 @@ module Graphics.XHB.Atom
 import Control.Applicative (Applicative)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader (MonadReader(..), ReaderT(..), ask)
-import Control.Monad.State (StateT(..), evalStateT, get, modify)
+import Control.Monad.State (MonadState(..), StateT(..), evalStateT, get, modify)
+import Control.Monad.Writer (MonadWriter(..))
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.HashMap.Lazy (HashMap)
 import Data.Typeable (Typeable)
@@ -59,3 +60,18 @@ instance (MonadAtom m, MonadTrans t, MonadIO (t m)) => MonadAtom (t m) where
 instance MonadReader r m => MonadReader r (AtomT m) where
     ask = lift ask
     local f (AtomT m) = AtomT . ReaderT $ local f . runReaderT m
+
+instance MonadState s m => MonadState s (AtomT m) where
+    get = lift get
+    put = lift . put
+
+instance MonadWriter w m => MonadWriter w (AtomT m) where
+    tell = lift . tell
+
+    listen (AtomT m) = AtomT . ReaderT $ \r -> StateT $ \s -> do
+        ((a, s'), w) <- listen $ flip runStateT s $ runReaderT m r
+        return ((a, w), s')
+
+    pass (AtomT m) = AtomT . ReaderT $ \r -> StateT $ \s -> pass $ do
+        ((a, f), s') <- flip runStateT s $ runReaderT m r
+        return ((a, s'), f)
