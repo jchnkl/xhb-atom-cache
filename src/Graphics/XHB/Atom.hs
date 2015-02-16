@@ -11,14 +11,14 @@ module Graphics.XHB.Atom
     ( AtomT
     , MonadAtom(..)
     , runAtomT
+    , seedAtoms
     ) where
 
-import Control.Applicative (Applicative)
-import Control.Monad.IO.Class (MonadIO(..))
+import Control.Applicative (Applicative, (<$>))
+import Control.Monad.Except
 import Control.Monad.Reader (MonadReader(..), ReaderT(..), ask)
 import Control.Monad.State (MonadState(..), StateT(..), evalStateT, get, gets, modify)
 import Control.Monad.Writer (MonadWriter(..))
-import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.HashMap.Lazy (HashMap)
 import Data.Typeable (Typeable)
 import Graphics.XHB (Connection, SomeError, ATOM, InternAtom(..))
@@ -37,6 +37,22 @@ instance MonadTrans AtomT where
 
 runAtomT :: Monad m => Connection -> AtomT m a -> m a
 runAtomT c = flip evalStateT M.empty . flip runReaderT c . unAtomT
+
+eitherToExcept :: Monad m => Either e a -> ExceptT e m a
+eitherToExcept = ExceptT . return
+
+-- | Preseed the atom cache with `ATOM`s
+-- Example:
+-- @ > let atoms = ["_NET_CLIENT_LIST", "_NET_NUMBER_OF_DESKTOPS"] @
+-- @ > fromJust <$> X.connect >>= \c -> runAtomT c . seedAtoms atoms $ mapM_ (\n -> unsafeLookupAtom n >>= liftIO . print) @
+seedAtoms :: (Applicative m, MonadIO m)
+          => [AtomName] -> AtomT m a -> AtomT m (Either SomeError a)
+seedAtoms []         atom = Right <$> atom
+seedAtoms names (AtomT m) = AtomT . runExceptT $ do
+    ask >>= forM names . internAtom
+        >>= fmap (zip names) . mapM eitherToExcept
+        >>= put . M.fromList
+    lift m
 
 internAtom :: MonadIO m => Connection -> AtomName -> m (Either SomeError ATOM)
 internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
