@@ -36,10 +36,10 @@ runAtomT :: Monad m => Connection -> AtomT m a -> m a
 runAtomT c = flip evalStateT M.empty . flip runReaderT c . unAtomT
 
 class MonadIO m => MonadAtom m where
-    getAtom :: String -> m (Either SomeError ATOM)
+    lookupAtom :: String -> m (Either SomeError ATOM)
 
 instance MonadIO m => MonadAtom (AtomT m) where
-    getAtom name = AtomT $ ask >>= \c -> do
+    lookupAtom name = AtomT $ ask >>= \c -> do
         ps <- get
         case M.lookup name ps of
             Just atom -> return (Right atom)
@@ -55,7 +55,7 @@ instance MonadIO m => MonadAtom (AtomT m) where
                                      (X.stringToCList name)
 
 instance (MonadAtom m, MonadTrans t, MonadIO (t m)) => MonadAtom (t m) where
-    getAtom = lift . getAtom
+    lookupAtom = lift . lookupAtom
 
 instance MonadReader r m => MonadReader r (AtomT m) where
     ask = lift ask
