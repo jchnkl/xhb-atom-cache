@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverlappingInstances       #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -37,6 +38,10 @@ instance MonadTrans AtomT where
 runAtomT :: Monad m => Connection -> AtomT m a -> m a
 runAtomT c = flip evalStateT M.empty . flip runReaderT c . unAtomT
 
+internAtom :: MonadIO m => Connection -> AtomName -> m (Either SomeError ATOM)
+internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
+    where request = MkInternAtom True (fromIntegral $ length name) (X.stringToCList name)
+
 class MonadIO m => MonadAtom m where
     lookupAtom :: AtomName -> m (Either SomeError ATOM)
     unsafeLookupAtom :: AtomName -> m ATOM
@@ -46,16 +51,11 @@ instance MonadIO m => MonadAtom (AtomT m) where
         ps <- get
         case M.lookup name ps of
             Just atom -> return (Right atom)
-            Nothing -> do
-                eatom <- liftIO $ X.internAtom c request >>= X.getReply
-                case eatom of
-                    Left err   -> return (Left err)
-                    Right atom -> do
-                        modify $ M.insert name atom
-                        return (Right atom)
-        where request = MkInternAtom True
-                                     (fromIntegral $ length name)
-                                     (X.stringToCList name)
+            Nothing -> internAtom c name >>= \case
+                Left err   -> return (Left err)
+                Right atom -> do
+                    modify $ M.insert name atom
+                    return (Right atom)
 
     unsafeLookupAtom = AtomT . gets . flip (M.!)
 
