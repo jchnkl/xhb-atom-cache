@@ -24,7 +24,9 @@ import Graphics.XHB (Connection, SomeError, ATOM, InternAtom(..))
 import qualified Data.HashMap.Lazy as M
 import qualified Graphics.XHB as X
 
-type AtomStateT m = ReaderT Connection (StateT (HashMap String ATOM) m)
+type AtomName = String
+
+type AtomStateT m = ReaderT Connection (StateT (HashMap AtomName ATOM) m)
 
 newtype AtomT m a = AtomT { unAtomT :: AtomStateT m a }
     deriving (Applicative, Functor, Monad, MonadIO, Typeable)
@@ -36,7 +38,8 @@ runAtomT :: Monad m => Connection -> AtomT m a -> m a
 runAtomT c = flip evalStateT M.empty . flip runReaderT c . unAtomT
 
 class MonadIO m => MonadAtom m where
-    unsafeLookupAtom :: String -> m ATOM
+    lookupAtom :: AtomName -> m (Either SomeError ATOM)
+    unsafeLookupAtom :: AtomName -> m ATOM
 
 instance MonadIO m => MonadAtom (AtomT m) where
     lookupAtom name = AtomT $ ask >>= \c -> do
