@@ -15,7 +15,7 @@ module Graphics.XHB.Atom
 import Control.Applicative (Applicative)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader (MonadReader(..), ReaderT(..), ask)
-import Control.Monad.State (MonadState(..), StateT(..), evalStateT, get, modify)
+import Control.Monad.State (MonadState(..), StateT(..), evalStateT, get, gets, modify)
 import Control.Monad.Writer (MonadWriter(..))
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.HashMap.Lazy (HashMap)
@@ -36,7 +36,7 @@ runAtomT :: Monad m => Connection -> AtomT m a -> m a
 runAtomT c = flip evalStateT M.empty . flip runReaderT c . unAtomT
 
 class MonadIO m => MonadAtom m where
-    lookupAtom :: String -> m (Either SomeError ATOM)
+    unsafeLookupAtom :: String -> m ATOM
 
 instance MonadIO m => MonadAtom (AtomT m) where
     lookupAtom name = AtomT $ ask >>= \c -> do
@@ -54,8 +54,11 @@ instance MonadIO m => MonadAtom (AtomT m) where
                                      (fromIntegral $ length name)
                                      (X.stringToCList name)
 
+    unsafeLookupAtom = AtomT . gets . flip (M.!)
+
 instance (MonadAtom m, MonadTrans t, MonadIO (t m)) => MonadAtom (t m) where
     lookupAtom = lift . lookupAtom
+    unsafeLookupAtom = lift . unsafeLookupAtom
 
 instance MonadReader r m => MonadReader r (AtomT m) where
     ask = lift ask
