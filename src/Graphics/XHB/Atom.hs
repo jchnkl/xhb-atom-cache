@@ -24,9 +24,9 @@ import Graphics.XHB (Connection, SomeError, ATOM, InternAtom(..))
 import qualified Data.HashMap.Lazy as M
 import qualified Graphics.XHB as X
 
-type AtomInternalT m = ReaderT Connection (StateT (HashMap String ATOM) m)
+type AtomStateT m = ReaderT Connection (StateT (HashMap String ATOM) m)
 
-newtype AtomT m a = AtomT { unAtomT :: AtomInternalT m a }
+newtype AtomT m a = AtomT { unAtomT :: AtomStateT m a }
     deriving (Applicative, Functor, Monad, MonadIO, Typeable)
 
 instance MonadTrans AtomT where
