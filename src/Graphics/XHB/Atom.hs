@@ -10,7 +10,8 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Graphics.XHB.Atom
-    ( AtomT(..)
+    ( AtomNameLike(..)
+    , AtomT(..)
     , MonadAtom(..)
     , AtomName
     , seedAtoms
@@ -37,12 +38,20 @@ instance Hashable ATOM where
 
 type AtomName = String
 
-type AtomState = (HashMap AtomName ATOM, HashMap ATOM AtomName)
+class (Eq a, Hashable a) => AtomNameLike a where
+    toAtomName   :: a -> AtomName
+    fromAtomName :: AtomName -> a
 
-newtype AtomT m a = AtomT { runAtomT :: StateT AtomState m a }
+instance AtomNameLike String where
+    toAtomName   = id
+    fromAtomName = id
+
+type AtomState l = (HashMap l ATOM, HashMap ATOM l)
+
+newtype AtomT l m a = AtomT { runAtomT :: StateT (AtomState l) m a }
     deriving (Applicative, Functor, Monad, MonadIO, Typeable)
 
-instance MonadTrans AtomT where
+instance MonadTrans (AtomT l) where
     lift = AtomT . lift
 
 eitherToExcept :: Monad m => Either e a -> ExceptT e m a
@@ -52,12 +61,12 @@ eitherToExcept = ExceptT . return
 -- Example:
 -- @ > let atoms = ["_NET_CLIENT_LIST", "_NET_NUMBER_OF_DESKTOPS"] @
 -- @ > fromJust <$> X.connect >>= \c -> runAtomT . seedAtoms c atoms $ mapM_ (\n -> unsafeLookupAtom n >>= liftIO . print) @
-seedAtoms :: (Applicative m, MonadIO m)
-          => Connection -> [AtomName] -> AtomT m a -> AtomT m (Either SomeError a)
+seedAtoms :: (AtomNameLike l, Applicative m, MonadIO m)
+          => Connection -> [l] -> AtomT l m a -> AtomT l m (Either SomeError a)
 seedAtoms _ [] m            = Right <$> m
-seedAtoms c names (AtomT m) = AtomT . runExceptT $ do
-    atoms <- mapM eitherToExcept =<< mapM (internAtom c) names
-    put (M.fromList $ zip names atoms, M.fromList $ zip atoms names)
+seedAtoms c ls (AtomT m) = AtomT . runExceptT $ do
+    atoms <- mapM eitherToExcept =<< mapM (internAtom c) (map toAtomName ls)
+    put (M.fromList $ zip ls atoms, M.fromList $ zip atoms ls)
     lift m
 
 internAtom :: MonadIO m => Connection -> AtomName -> m (Either SomeError ATOM)
@@ -66,43 +75,43 @@ internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
 
 -- | Lookup AtomName in cache first, if that fails, try to fetch from the
 -- X server and put it into the cache
-tryLookupAtom :: (MonadAtom m, MonadIO m)
-              => Connection -> AtomName -> m (Either SomeError ATOM)
-tryLookupAtom c name = lookupAtom name >>= \case
+tryLookupAtom :: (AtomNameLike l, MonadAtom l m, MonadIO m)
+              => Connection -> l -> m (Either SomeError ATOM)
+tryLookupAtom c l = lookupAtom l >>= \case
     Just a  -> return $ Right a
     Nothing -> runExceptT $ do
-        atom <- eitherToExcept =<< internAtom c name
-        insertAtom name atom
+        atom <- eitherToExcept =<< internAtom c (toAtomName l)
+        insertAtom l atom
         return atom
 
-class Monad m => MonadAtom m where
-    insertAtom :: AtomName -> ATOM -> m ()
-    lookupAtom :: AtomName -> m (Maybe ATOM)
-    lookupName :: ATOM -> m (Maybe AtomName)
+class (AtomNameLike l, Monad m) => MonadAtom l m where
+    insertAtom :: l -> ATOM -> m ()
+    lookupAtom :: l -> m (Maybe ATOM)
+    lookupName :: ATOM -> m (Maybe l)
 
-instance Monad m => MonadAtom (AtomT m) where
+instance (AtomNameLike l, Monad m) => MonadAtom l (AtomT l m) where
     insertAtom n a = AtomT . modify $ \(na, an) -> (M.insert n a na, M.insert a n an)
     lookupAtom n = AtomT . gets $ M.lookup n . fst
     lookupName a = AtomT . gets $ M.lookup a . snd
 
-instance MonadError e m => MonadError e (AtomT m) where
+instance MonadError e m => MonadError e (AtomT l m) where
     throwError = lift . throwError
     catchError (AtomT m) f = AtomT $ catchError m (runAtomT . f)
 
-instance (MonadAtom m, MonadTrans t, Monad (t m)) => MonadAtom (t m) where
+instance (MonadAtom l m, MonadTrans t, Monad (t m)) => MonadAtom l (t m) where
     insertAtom n = lift . insertAtom n
     lookupAtom = lift . lookupAtom
     lookupName = lift . lookupName
 
-instance MonadReader r m => MonadReader r (AtomT m) where
+instance MonadReader r m => MonadReader r (AtomT l m) where
     ask = lift ask
     local f = AtomT . local f . runAtomT
 
-instance MonadState s m => MonadState s (AtomT m) where
+instance MonadState s m => MonadState s (AtomT l m) where
     get = lift get
     put = lift . put
 
-instance MonadWriter w m => MonadWriter w (AtomT m) where
+instance MonadWriter w m => MonadWriter w (AtomT l m) where
     tell = lift . tell
     listen = AtomT . listen . runAtomT
     pass = AtomT . pass . runAtomT
