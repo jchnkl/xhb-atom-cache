@@ -14,6 +14,7 @@ module Graphics.XHB.Atom
     , AtomT(..)
     , MonadAtom(..)
     , AtomName
+    , runAtomT
     , seedAtoms
     , tryLookupAtom
     ) where
@@ -21,7 +22,7 @@ module Graphics.XHB.Atom
 import Control.Applicative (Applicative, (<$>))
 import Control.Monad.Except (MonadError(..), ExceptT(..), runExceptT)
 import Control.Monad.Reader (MonadReader(..))
-import Control.Monad.State (MonadState(..), StateT(..), get, gets, modify)
+import Control.Monad.State (MonadState(..), StateT(..), evalStateT, get, gets, modify)
 import Control.Monad.Writer (MonadWriter(..))
 import Control.Monad.Trans (MonadTrans(..))
 import Control.Monad.IO.Class (MonadIO(..))
@@ -48,7 +49,7 @@ instance AtomNameLike String where
 
 type AtomState l = (HashMap l ATOM, HashMap ATOM l)
 
-newtype AtomT l m a = AtomT { runAtomT :: StateT (AtomState l) m a }
+newtype AtomT l m a = AtomT { unAtomT :: StateT (AtomState l) m a }
     deriving (Applicative, Functor, Monad, MonadIO, Typeable)
 
 instance MonadTrans (AtomT l) where
@@ -56,6 +57,9 @@ instance MonadTrans (AtomT l) where
 
 eitherToExcept :: Monad m => Either e a -> ExceptT e m a
 eitherToExcept = ExceptT . return
+
+runAtomT :: Monad m => AtomT l m a -> m a
+runAtomT = flip evalStateT (M.empty, M.empty) . unAtomT
 
 -- | Preseed the atom cache with `ATOM`s
 -- Example:
@@ -96,7 +100,7 @@ instance (AtomNameLike l, Monad m) => MonadAtom l (AtomT l m) where
 
 instance MonadError e m => MonadError e (AtomT l m) where
     throwError = lift . throwError
-    catchError (AtomT m) f = AtomT $ catchError m (runAtomT . f)
+    catchError (AtomT m) f = AtomT $ catchError m (unAtomT . f)
 
 instance (MonadAtom l m, MonadTrans t, Monad (t m)) => MonadAtom l (t m) where
     insertAtom n = lift . insertAtom n
@@ -105,7 +109,7 @@ instance (MonadAtom l m, MonadTrans t, Monad (t m)) => MonadAtom l (t m) where
 
 instance MonadReader r m => MonadReader r (AtomT l m) where
     ask = lift ask
-    local f = AtomT . local f . runAtomT
+    local f = AtomT . local f . unAtomT
 
 instance MonadState s m => MonadState s (AtomT l m) where
     get = lift get
@@ -113,5 +117,5 @@ instance MonadState s m => MonadState s (AtomT l m) where
 
 instance MonadWriter w m => MonadWriter w (AtomT l m) where
     tell = lift . tell
-    listen = AtomT . listen . runAtomT
-    pass = AtomT . pass . runAtomT
+    listen = AtomT . listen . unAtomT
+    pass = AtomT . pass . unAtomT
