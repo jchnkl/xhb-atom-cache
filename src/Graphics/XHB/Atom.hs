@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -17,19 +19,26 @@ module Graphics.XHB.Atom
 import Control.Applicative (Applicative, (<$>))
 import Control.Monad.Except (MonadError(..), ExceptT(..), runExceptT)
 import Control.Monad.Reader (MonadReader(..))
-import Control.Monad.State (MonadState(..), StateT(..), get, gets, modify)
+import Control.Monad.State (MonadState(..), StateT(..), get, gets)
 import Control.Monad.Writer (MonadWriter(..))
 import Control.Monad.Trans (MonadTrans(..))
 import Control.Monad.IO.Class (MonadIO(..))
+import Data.Word (Word32)
+import Data.Hashable (Hashable(..))
 import Data.HashMap.Lazy (HashMap)
 import Data.Typeable (Typeable)
 import Graphics.XHB (Connection, SomeError, ATOM, InternAtom(..))
 import qualified Data.HashMap.Lazy as M
 import qualified Graphics.XHB as X
 
+instance Hashable ATOM where
+    hashWithSalt s a = (s +) . fromIntegral $ (X.fromXid . X.toXid $ a :: Word32)
+
 type AtomName = String
 
-newtype AtomT m a = AtomT { runAtomT :: StateT (HashMap AtomName ATOM) m a }
+type AtomState = (HashMap AtomName ATOM, HashMap ATOM AtomName)
+
+newtype AtomT m a = AtomT { runAtomT :: StateT AtomState m a }
     deriving (Applicative, Functor, Monad, MonadIO, Typeable)
 
 instance MonadTrans AtomT where
@@ -46,39 +55,29 @@ seedAtoms :: (Applicative m, MonadIO m)
           => Connection -> [AtomName] -> AtomT m a -> AtomT m (Either SomeError a)
 seedAtoms _ [] m            = Right <$> m
 seedAtoms c names (AtomT m) = AtomT . runExceptT $ do
-    forM names (internAtom c)
-        >>= fmap (zip names) . mapM eitherToExcept
-        >>= put . M.fromList
+    atoms <- mapM eitherToExcept =<< mapM (internAtom c) names
+    put (M.fromList $ zip names atoms, M.fromList $ zip atoms names)
     lift m
 
 internAtom :: MonadIO m => Connection -> AtomName -> m (Either SomeError ATOM)
 internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
     where request = MkInternAtom True (fromIntegral $ length name) (X.stringToCList name)
 
-class MonadIO m => MonadAtom m where
-    lookupAtom :: Connection -> AtomName -> m (Either SomeError ATOM)
-    unsafeLookupAtom :: AtomName -> m ATOM
+class Monad m => MonadAtom m where
+    lookupAtom :: AtomName -> m (Maybe ATOM)
+    lookupName :: ATOM -> m (Maybe AtomName)
 
-instance MonadIO m => MonadAtom (AtomT m) where
-    lookupAtom c name = AtomT $ do
-        ps <- get
-        case M.lookup name ps of
-            Just atom -> return (Right atom)
-            Nothing -> internAtom c name >>= \case
-                Left err   -> return (Left err)
-                Right atom -> do
-                    modify $ M.insert name atom
-                    return (Right atom)
-
-    unsafeLookupAtom = AtomT . gets . flip (M.!)
+instance Monad m => MonadAtom (AtomT m) where
+    lookupAtom n = AtomT . gets $ M.lookup n . fst
+    lookupName a = AtomT . gets $ M.lookup a . snd
 
 instance MonadError e m => MonadError e (AtomT m) where
     throwError = lift . throwError
     catchError (AtomT m) f = AtomT $ catchError m (runAtomT . f)
 
-instance (MonadAtom m, MonadTrans t, MonadIO (t m)) => MonadAtom (t m) where
-    lookupAtom c = lift . lookupAtom c
-    unsafeLookupAtom = lift . unsafeLookupAtom
+instance (MonadAtom m, MonadTrans t, Monad (t m)) => MonadAtom (t m) where
+    lookupAtom = lift . lookupAtom
+    lookupName = lift . lookupName
 
 instance MonadReader r m => MonadReader r (AtomT m) where
     ask = lift ask
