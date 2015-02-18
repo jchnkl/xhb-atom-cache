@@ -16,6 +16,7 @@ module Graphics.XHB.Atom
 
 import Control.Applicative (Applicative, (<$>))
 import Control.Monad.Except
+import Control.Monad.Signatures (Catch)
 import Control.Monad.Reader (MonadReader(..), ReaderT(..), ask)
 import Control.Monad.State (MonadState(..), StateT(..), evalStateT, get, gets, modify)
 import Control.Monad.Writer (MonadWriter(..))
@@ -74,6 +75,16 @@ instance MonadIO m => MonadAtom (AtomT m) where
                     return (Right atom)
 
     unsafeLookupAtom = AtomT . gets . flip (M.!)
+
+liftCatch :: Monad m => Catch e m a -> Catch e (AtomT m) a
+liftCatch f (AtomT m) h = undefined
+    AtomT . ReaderT $ \r -> StateT $ \s -> do
+        a <- f (evalStateT (runReaderT m r) s) (runAtomT r . h)
+        return (a, s)
+
+instance MonadError e m => MonadError e (AtomT m) where
+    throwError = lift . throwError
+    catchError = liftCatch catchError
 
 instance (MonadAtom m, MonadTrans t, MonadIO (t m)) => MonadAtom (t m) where
     lookupAtom = lift . lookupAtom
