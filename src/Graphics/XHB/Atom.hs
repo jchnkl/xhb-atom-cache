@@ -8,7 +8,7 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Graphics.XHB.Atom
-    ( AtomT
+    ( AtomT(..)
     , MonadAtom(..)
     , runAtomT
     , seedAtoms
