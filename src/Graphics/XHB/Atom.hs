@@ -15,10 +15,12 @@ module Graphics.XHB.Atom
     ) where
 
 import Control.Applicative (Applicative, (<$>))
-import Control.Monad.Except
+import Control.Monad.Except (MonadError(..), ExceptT(..), runExceptT)
 import Control.Monad.Reader (MonadReader(..))
 import Control.Monad.State (MonadState(..), StateT(..), get, gets, modify)
 import Control.Monad.Writer (MonadWriter(..))
+import Control.Monad.Trans (MonadTrans(..))
+import Control.Monad.IO.Class (MonadIO(..))
 import Data.HashMap.Lazy (HashMap)
 import Data.Typeable (Typeable)
 import Graphics.XHB (Connection, SomeError, ATOM, InternAtom(..))
