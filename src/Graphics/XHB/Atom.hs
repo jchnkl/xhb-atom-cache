@@ -64,10 +64,12 @@ internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
     where request = MkInternAtom True (fromIntegral $ length name) (X.stringToCList name)
 
 class Monad m => MonadAtom m where
+    insertAtom :: AtomName -> ATOM -> m ()
     lookupAtom :: AtomName -> m (Maybe ATOM)
     lookupName :: ATOM -> m (Maybe AtomName)
 
 instance Monad m => MonadAtom (AtomT m) where
+    insertAtom n a = AtomT . modify $ \(na, an) -> (M.insert n a na, M.insert a n an)
     lookupAtom n = AtomT . gets $ M.lookup n . fst
     lookupName a = AtomT . gets $ M.lookup a . snd
 
@@ -76,6 +78,7 @@ instance MonadError e m => MonadError e (AtomT m) where
     catchError (AtomT m) f = AtomT $ catchError m (runAtomT . f)
 
 instance (MonadAtom m, MonadTrans t, Monad (t m)) => MonadAtom (t m) where
+    insertAtom n = lift . insertAtom n
     lookupAtom = lift . lookupAtom
     lookupName = lift . lookupName
 
