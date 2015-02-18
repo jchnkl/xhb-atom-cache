@@ -10,6 +10,7 @@
 module Graphics.XHB.Atom
     ( AtomT(..)
     , MonadAtom(..)
+    , AtomName
     , runAtomT
     , seedAtoms
     ) where
