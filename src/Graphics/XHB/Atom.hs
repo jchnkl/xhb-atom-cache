@@ -14,12 +14,13 @@ module Graphics.XHB.Atom
     , MonadAtom(..)
     , AtomName
     , seedAtoms
+    , tryLookupAtom
     ) where
 
 import Control.Applicative (Applicative, (<$>))
 import Control.Monad.Except (MonadError(..), ExceptT(..), runExceptT)
 import Control.Monad.Reader (MonadReader(..))
-import Control.Monad.State (MonadState(..), StateT(..), get, gets)
+import Control.Monad.State (MonadState(..), StateT(..), get, gets, modify)
 import Control.Monad.Writer (MonadWriter(..))
 import Control.Monad.Trans (MonadTrans(..))
 import Control.Monad.IO.Class (MonadIO(..))
@@ -62,6 +63,17 @@ seedAtoms c names (AtomT m) = AtomT . runExceptT $ do
 internAtom :: MonadIO m => Connection -> AtomName -> m (Either SomeError ATOM)
 internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
     where request = MkInternAtom True (fromIntegral $ length name) (X.stringToCList name)
+
+-- | Lookup AtomName in cache first, if that fails, try to fetch from the
+-- X server and put it into the cache
+tryLookupAtom :: (MonadAtom m, MonadIO m)
+              => Connection -> AtomName -> m (Either SomeError ATOM)
+tryLookupAtom c name = lookupAtom name >>= \case
+    Just a  -> return $ Right a
+    Nothing -> runExceptT $ do
+        atom <- eitherToExcept =<< internAtom c name
+        insertAtom name atom
+        return atom
 
 class Monad m => MonadAtom m where
     insertAtom :: AtomName -> ATOM -> m ()
