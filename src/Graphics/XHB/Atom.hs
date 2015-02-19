@@ -23,6 +23,7 @@ module Graphics.XHB.Atom
     ) where
 
 import Control.Applicative (Applicative, (<$>))
+import Control.Monad (join)
 import Control.Monad.Except (MonadError(..), ExceptT(..), runExceptT)
 import Control.Monad.Reader (MonadReader(..))
 import Control.Monad.State (MonadState(..), StateT(..), evalStateT, get, gets, modify)
@@ -41,19 +42,19 @@ import qualified Graphics.XHB as X
 instance Hashable ATOM where
     hashWithSalt s a = (s +) . fromIntegral $ (X.fromXid . X.toXid $ a :: Word32)
 
-class (Eq a, Hashable a, Typeable a) => AtomLike a where
-    toAtom :: a -> AtomId
+class (Eq l, Hashable l, Typeable l) => AtomLike l where
+    toAtom :: l -> AtomId
     toAtom = AtomId
 
-    fromAtom :: AtomId -> Maybe a
+    fromAtom :: AtomId -> Maybe l
     fromAtom = cast
 
-    toAtomName :: a -> AtomName
+    toAtomName :: l -> AtomName
 
 atomName :: AtomId -> AtomName
 atomName (AtomId a) = toAtomName a
 
-data AtomId = forall a. (AtomLike a, Eq a, Typeable a) => AtomId a
+data AtomId = forall l. AtomLike l => AtomId l
     deriving Typeable
 
 instance Eq AtomId where
@@ -82,13 +83,14 @@ runAtomT = flip evalStateT (M.empty, M.empty) . unAtomT
 -- Example:
 -- @ > let atoms = ["_NET_CLIENT_LIST", "_NET_NUMBER_OF_DESKTOPS"] @
 -- @ > fromJust <$> X.connect >>= \c -> runAtomT . seedAtoms c atoms $ mapM_ (\n -> unsafeLookupAtom n >>= liftIO . print) @
-seedAtoms :: (Applicative m, MonadIO m)
-          => Connection -> [AtomId] -> AtomT m a -> AtomT m (Either SomeError a)
-seedAtoms _ [] m            = Right <$> m
-seedAtoms c atomids (AtomT m) = AtomT . runExceptT $ do
-    atoms <- mapM eitherToExcept =<< mapM (internAtom c) (map atomName atomids)
+seedAtoms :: (AtomLike l, Applicative m, MonadIO m)
+          => Connection -> [l] -> AtomT m a -> AtomT m (Either SomeError a)
+seedAtoms _ [] m         = Right <$> m
+seedAtoms c as (AtomT m) = AtomT . runExceptT $ do
+    atoms <- mapM eitherToExcept =<< mapM (internAtom c) (map toAtomName as)
     put (M.fromList $ zip atomids atoms, M.fromList $ zip atoms atomids)
     lift m
+    where atomids = map toAtom as
 
 internAtom :: MonadIO m => Connection -> AtomName -> m (Either SomeError ATOM)
 internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
@@ -96,24 +98,24 @@ internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
 
 -- | Lookup AtomName in cache first, if that fails, try to fetch from the
 -- X server and put it into the cache
-tryLookupAtom :: (MonadAtom m, MonadIO m)
-              => Connection -> AtomId -> m (Either SomeError ATOM)
-tryLookupAtom c atomid = lookupATOM atomid >>= \case
-    Just a  -> return $ Right a
-    Nothing -> runExceptT $ do
-        atom <- eitherToExcept =<< internAtom c (atomName atomid)
-        insertATOM atomid atom
+tryLookupAtom :: (AtomLike l, MonadAtom m, MonadIO m)
+              => Connection -> l -> m (Either SomeError ATOM)
+tryLookupAtom c a = lookupATOM a >>= \case
+    Just atom  -> return $ Right atom
+    Nothing    -> runExceptT $ do
+        atom <- eitherToExcept =<< internAtom c (toAtomName a)
+        insertATOM a atom
         return atom
 
 class Monad m => MonadAtom m where
-    insertATOM :: AtomId -> ATOM -> m ()
-    lookupATOM :: AtomId -> m (Maybe ATOM)
-    lookupAtomId :: ATOM -> m (Maybe AtomId)
+    insertATOM :: AtomLike l => l -> ATOM -> m ()
+    lookupATOM :: AtomLike l => l -> m (Maybe ATOM)
+    lookupAtomId :: AtomLike l => ATOM -> m (Maybe l)
 
 instance Monad m => MonadAtom (AtomT m) where
-    insertATOM n a = AtomT . modify $ \(na, an) -> (M.insert n a na, M.insert a n an)
-    lookupATOM n = AtomT . gets $ M.lookup n . fst
-    lookupAtomId a = AtomT . gets $ M.lookup a . snd
+    insertATOM n a = AtomT . modify $ \(na, an) -> (M.insert (toAtom n) a na, M.insert a (toAtom n) an)
+    lookupATOM n = AtomT . gets $ M.lookup (toAtom n) . fst
+    lookupAtomId a = AtomT . gets $ join . fmap fromAtom . M.lookup a . snd
 
 instance MonadError e m => MonadError e (AtomT m) where
     throwError = lift . throwError
