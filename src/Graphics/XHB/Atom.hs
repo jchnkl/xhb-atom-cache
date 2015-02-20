@@ -23,7 +23,6 @@ module Graphics.XHB.Atom
     ) where
 
 import Control.Applicative (Applicative, (<$>))
-import Control.Monad (join)
 import Control.Monad.Except (MonadError(..), ExceptT(..), runExceptT)
 import Control.Monad.Reader (MonadReader(..))
 import Control.Monad.State (MonadState(..), StateT(..), evalStateT, get, gets, modify)
