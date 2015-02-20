@@ -109,12 +109,16 @@ tryLookupAtom c a = lookupATOM a >>= \case
 class Monad m => MonadAtom m where
     insertATOM :: AtomLike l => l -> ATOM -> m ()
     lookupATOM :: AtomLike l => l -> m (Maybe ATOM)
-    lookupAtomId :: AtomLike l => ATOM -> m (Maybe l)
+    unsafeLookupATOM :: AtomLike l => l -> m ATOM
+    lookupAtomId :: ATOM -> m (Maybe AtomId)
+    unsafeLookupAtomId :: ATOM -> m AtomId
 
 instance Monad m => MonadAtom (AtomT m) where
     insertATOM n a = AtomT . modify $ \(na, an) -> (M.insert (toAtom n) a na, M.insert a (toAtom n) an)
     lookupATOM n = AtomT . gets $ M.lookup (toAtom n) . fst
-    lookupAtomId a = AtomT . gets $ join . fmap fromAtom . M.lookup a . snd
+    unsafeLookupATOM n = AtomT . gets $ (M.! (toAtom n)) . fst
+    lookupAtomId a = AtomT . gets $ M.lookup a . snd
+    unsafeLookupAtomId a = AtomT . gets $ (M.! a) . snd
 
 instance MonadError e m => MonadError e (AtomT m) where
     throwError = lift . throwError
@@ -123,7 +127,9 @@ instance MonadError e m => MonadError e (AtomT m) where
 instance (MonadAtom m, MonadTrans t, Monad (t m)) => MonadAtom (t m) where
     insertATOM n = lift . insertATOM n
     lookupATOM = lift . lookupATOM
+    unsafeLookupATOM = lift . unsafeLookupATOM
     lookupAtomId = lift . lookupAtomId
+    unsafeLookupAtomId = lift . unsafeLookupAtomId
 
 instance MonadReader r m => MonadReader r (AtomT m) where
     ask = lift ask
