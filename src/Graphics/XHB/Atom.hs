@@ -87,9 +87,12 @@ seedAtoms :: (AtomLike l, Applicative m, MonadIO m)
 seedAtoms _ [] m         = Right <$> m
 seedAtoms c as (AtomT m) = AtomT . runExceptT $ do
     atoms <- mapM eitherToExcept =<< mapM (internAtom c) (map toAtomName as)
-    put (M.fromList $ zip atomids atoms, M.fromList $ zip atoms atomids)
+    modify $ \(f, s) -> (f `M.union` fs atoms, s `M.union` ss atoms)
     lift m
-    where atomids = map toAtom as
+    where
+    atomids = map toAtom as
+    fs = M.fromList . zip atomids
+    ss = M.fromList . flip zip atomids
 
 internAtom :: MonadIO m => Connection -> AtomName -> m (Either SomeError ATOM)
 internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
