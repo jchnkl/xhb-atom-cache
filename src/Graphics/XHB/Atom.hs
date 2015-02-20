@@ -47,7 +47,7 @@ class (Eq l, Hashable l, Typeable l) => AtomLike l where
     toAtom = AtomId
 
     fromAtom :: AtomId -> Maybe l
-    fromAtom = cast
+    fromAtom (AtomId a) = cast a
 
     toAtomName :: l -> AtomName
 
