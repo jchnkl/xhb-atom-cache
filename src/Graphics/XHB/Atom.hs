@@ -82,14 +82,16 @@ runAtomT = flip evalStateT (M.empty, M.empty) . unAtomT
 -- Example:
 -- @ > let atoms = ["_NET_CLIENT_LIST", "_NET_NUMBER_OF_DESKTOPS"] @
 -- @ > fromJust <$> X.connect >>= \c -> runAtomT . seedAtoms c atoms $ mapM_ (\n -> unsafeLookupAtom n >>= liftIO . print) @
-seedAtoms :: (AtomLike l, Applicative m, MonadIO m)
-          => Connection -> [l] -> AtomT m a -> AtomT m (Either SomeError a)
-seedAtoms _ [] m         = Right <$> m
-seedAtoms c as (AtomT m) = AtomT . runExceptT $ do
+seedAtomsImpl :: (AtomLike l, Applicative m, MonadIO m)
+              => Connection -> [l] -> AtomT m (Maybe SomeError)
+seedAtomsImpl _ [] = return Nothing
+seedAtomsImpl c as = AtomT . fmap toMaybe . runExceptT $ do
     atoms <- mapM eitherToExcept =<< mapM (internAtom c) (map toAtomName as)
     put (M.fromList $ zip atomids atoms, M.fromList $ zip atoms atomids)
-    lift m
     where atomids = map toAtom as
+          toMaybe (Left  e) = Just e
+          toMaybe (Right _) = Nothing
+
 
 internAtom :: MonadIO m => Connection -> AtomName -> m (Either SomeError ATOM)
 internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
@@ -106,14 +108,16 @@ tryLookupAtom c a = lookupATOM a >>= \case
         insertATOM a atom
         return atom
 
-class Monad m => MonadAtom m where
+class (Applicative m, MonadIO m) => MonadAtom m where
+    seedAtoms :: AtomLike l => Connection -> [l] -> m (Maybe SomeError)
     insertATOM :: AtomLike l => l -> ATOM -> m ()
     lookupATOM :: AtomLike l => l -> m (Maybe ATOM)
     unsafeLookupATOM :: AtomLike l => l -> m ATOM
     lookupAtomId :: ATOM -> m (Maybe AtomId)
     unsafeLookupAtomId :: ATOM -> m AtomId
 
-instance Monad m => MonadAtom (AtomT m) where
+instance (Applicative m, MonadIO m) => MonadAtom (AtomT m) where
+    seedAtoms c = seedAtomsImpl c
     insertATOM n a = AtomT . modify $ \(na, an) -> (M.insert (toAtom n) a na, M.insert a (toAtom n) an)
     lookupATOM n = AtomT . gets $ M.lookup (toAtom n) . fst
     unsafeLookupATOM n = AtomT . gets $ (M.! (toAtom n)) . fst
@@ -124,7 +128,8 @@ instance MonadError e m => MonadError e (AtomT m) where
     throwError = lift . throwError
     catchError (AtomT m) f = AtomT $ catchError m (unAtomT . f)
 
-instance (MonadAtom m, MonadTrans t, Monad (t m)) => MonadAtom (t m) where
+instance (MonadAtom m, MonadTrans t, Applicative (t m), MonadIO (t m)) => MonadAtom (t m) where
+    seedAtoms c = lift . seedAtoms c
     insertATOM n = lift . insertATOM n
     lookupATOM = lift . lookupATOM
     unsafeLookupATOM = lift . unsafeLookupATOM
