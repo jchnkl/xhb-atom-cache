@@ -1,4 +1,4 @@
-name:                xhb-atom
+name:                xhb-atom-cache
 version:             0.1.0.0
 synopsis:            Atom cache for XHB
 description:         Atom cache for XHB
@@ -14,7 +14,7 @@ cabal-version:       >=1.10
 
 source-repository head
   type: git
-  location: git://github.com/jotrk/xhb-atom.git
+  location: git://github.com/jotrk/xhb-atom-cache.git
 
 library
   build-depends:       base         >= 4.7  && < 4.8,
@@ -24,7 +24,7 @@ library
                        hashable     >= 1.2,
                        unordered-containers >= 0.2.5
 
-  exposed-modules:     Graphics.XHB.Atom
+  exposed-modules:     Graphics.XHB.AtomCache
 
   other-extensions:    DeriveDataTypeable,
                        FlexibleContexts,

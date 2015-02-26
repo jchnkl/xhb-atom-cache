@@ -10,14 +10,14 @@
 {-# LANGUAGE OverlappingInstances       #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Graphics.XHB.Atom
+module Graphics.XHB.AtomCache
     ( AtomId(..)
     , AtomLike(..)
-    , AtomT(..)
-    , MonadAtom(..)
+    , AtomCacheT(..)
+    , AtomCacheCtx(..)
     , AtomName
     , atomName
-    , runAtomT
+    , runAtomCacheT
     , seedAtoms
     , tryLookupAtom
     ) where
@@ -66,26 +66,26 @@ type AtomName = String
 
 type AtomState = (HashMap AtomId ATOM, HashMap ATOM AtomId)
 
-newtype AtomT m a = AtomT { unAtomT :: StateT AtomState m a }
+newtype AtomCacheT m a = AtomCacheT { unAtomT :: StateT AtomState m a }
     deriving (Applicative, Functor, Monad, MonadIO, Typeable)
 
-instance MonadTrans AtomT where
-    lift = AtomT . lift
+instance MonadTrans AtomCacheT where
+    lift = AtomCacheT . lift
 
 eitherToExcept :: Monad m => Either e a -> ExceptT e m a
 eitherToExcept = ExceptT . return
 
-runAtomT :: Monad m => AtomT m a -> m a
-runAtomT = flip evalStateT (M.empty, M.empty) . unAtomT
+runAtomCacheT :: Monad m => AtomCacheT m a -> m a
+runAtomCacheT = flip evalStateT (M.empty, M.empty) . unAtomT
 
 -- | Preseed the atom cache with `ATOM`s
 -- Example:
 -- @ > let atoms = ["_NET_CLIENT_LIST", "_NET_NUMBER_OF_DESKTOPS"] @
--- @ > fromJust <$> X.connect >>= \c -> runAtomT . seedAtoms c atoms $ mapM_ (\n -> unsafeLookupAtom n >>= liftIO . print) @
+-- @ > fromJust <$> X.connect >>= \c -> runAtomCacheT . seedAtoms c atoms $ mapM_ (\n -> unsafeLookupAtom n >>= liftIO . print) @
 seedAtoms :: (AtomLike l, Applicative m, MonadIO m)
-          => Connection -> [l] -> AtomT m a -> AtomT m (Either SomeError a)
+          => Connection -> [l] -> AtomCacheT m a -> AtomCacheT m (Either SomeError a)
 seedAtoms _ [] m         = Right <$> m
-seedAtoms c as (AtomT m) = AtomT . runExceptT $ do
+seedAtoms c as (AtomCacheT m) = AtomCacheT . runExceptT $ do
     atoms <- mapM eitherToExcept =<< mapM (internAtom c) (map toAtomName as)
     modify $ \(f, s) -> (f `M.union` fs atoms, s `M.union` ss atoms)
     lift m
@@ -100,7 +100,7 @@ internAtom c name = liftIO $ X.internAtom c request >>= X.getReply
 
 -- | Lookup AtomName in cache first, if that fails, try to fetch from the
 -- X server and put it into the cache
-tryLookupAtom :: (AtomLike l, MonadAtom m, MonadIO m)
+tryLookupAtom :: (AtomLike l, AtomCacheCtx m, MonadIO m)
               => Connection -> l -> m (Either SomeError ATOM)
 tryLookupAtom c a = lookupATOM a >>= \case
     Just atom  -> return $ Right atom
@@ -109,40 +109,40 @@ tryLookupAtom c a = lookupATOM a >>= \case
         insertATOM a atom
         return atom
 
-class Monad m => MonadAtom m where
+class Monad m => AtomCacheCtx m where
     insertATOM :: AtomLike l => l -> ATOM -> m ()
     lookupATOM :: AtomLike l => l -> m (Maybe ATOM)
     unsafeLookupATOM :: AtomLike l => l -> m ATOM
     lookupAtomId :: ATOM -> m (Maybe AtomId)
     unsafeLookupAtomId :: ATOM -> m AtomId
 
-instance Monad m => MonadAtom (AtomT m) where
-    insertATOM n a = AtomT . modify $ \(na, an) -> (M.insert (toAtom n) a na, M.insert a (toAtom n) an)
-    lookupATOM n = AtomT . gets $ M.lookup (toAtom n) . fst
-    unsafeLookupATOM n = AtomT . gets $ (M.! (toAtom n)) . fst
-    lookupAtomId a = AtomT . gets $ M.lookup a . snd
-    unsafeLookupAtomId a = AtomT . gets $ (M.! a) . snd
+instance Monad m => AtomCacheCtx (AtomCacheT m) where
+    insertATOM n a = AtomCacheT . modify $ \(na, an) -> (M.insert (toAtom n) a na, M.insert a (toAtom n) an)
+    lookupATOM n = AtomCacheT . gets $ M.lookup (toAtom n) . fst
+    unsafeLookupATOM n = AtomCacheT . gets $ (M.! (toAtom n)) . fst
+    lookupAtomId a = AtomCacheT . gets $ M.lookup a . snd
+    unsafeLookupAtomId a = AtomCacheT . gets $ (M.! a) . snd
 
-instance MonadError e m => MonadError e (AtomT m) where
+instance MonadError e m => MonadError e (AtomCacheT m) where
     throwError = lift . throwError
-    catchError (AtomT m) f = AtomT $ catchError m (unAtomT . f)
+    catchError (AtomCacheT m) f = AtomCacheT $ catchError m (unAtomT . f)
 
-instance (MonadAtom m, MonadTrans t, Monad (t m)) => MonadAtom (t m) where
+instance (AtomCacheCtx m, MonadTrans t, Monad (t m)) => AtomCacheCtx (t m) where
     insertATOM n = lift . insertATOM n
     lookupATOM = lift . lookupATOM
     unsafeLookupATOM = lift . unsafeLookupATOM
     lookupAtomId = lift . lookupAtomId
     unsafeLookupAtomId = lift . unsafeLookupAtomId
 
-instance MonadReader r m => MonadReader r (AtomT m) where
+instance MonadReader r m => MonadReader r (AtomCacheT m) where
     ask = lift ask
-    local f = AtomT . local f . unAtomT
+    local f = AtomCacheT . local f . unAtomT
 
-instance MonadState s m => MonadState s (AtomT m) where
+instance MonadState s m => MonadState s (AtomCacheT m) where
     get = lift get
     put = lift . put
 
-instance MonadWriter w m => MonadWriter w (AtomT m) where
+instance MonadWriter w m => MonadWriter w (AtomCacheT m) where
     tell = lift . tell
-    listen = AtomT . listen . unAtomT
-    pass = AtomT . pass . unAtomT
+    listen = AtomCacheT . listen . unAtomT
+    pass = AtomCacheT . pass . unAtomT
