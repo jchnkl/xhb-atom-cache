@@ -81,12 +81,10 @@ runAtomCacheT = flip evalStateT (M.empty, M.empty) . unAtomT
 -- | Preseed the atom cache with `AtomLike`s. Example:
 --
 -- @
--- {-# LANGUAGE DeriveDataTypeable #-}
+-- {-\# LANGUAGE DeriveDataTypeable \#-}
 --
--- import Data.Maybe (fromJust)
 -- import Data.Typeable (Typeable)
 -- import Data.Hashable (Hashable(..))
--- import Control.Applicative ((\<$\>))
 -- import Control.Monad (forM_, void)
 -- import Control.Monad.IO.Class (liftIO)
 -- import Graphics.XHB (connect)
@@ -106,7 +104,7 @@ runAtomCacheT = flip evalStateT (M.empty, M.empty) . unAtomT
 --
 -- main :: IO ()
 -- main = do
---     c <- fromJust \<$\> connect
+--     Just c <- connect
 --     void $ runAtomCacheT . seedAtoms c atoms $ do
 --         forM_ atoms $ \\a -> unsafeLookupATOM a >>= liftIO . print
 -- @
