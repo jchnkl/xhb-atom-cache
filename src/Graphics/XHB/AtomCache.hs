@@ -78,10 +78,38 @@ eitherToExcept = ExceptT . return
 runAtomCacheT :: Monad m => AtomCacheT m a -> m a
 runAtomCacheT = flip evalStateT (M.empty, M.empty) . unAtomT
 
--- | Preseed the atom cache with `ATOM`s
--- Example:
--- @ > let atoms = ["_NET_CLIENT_LIST", "_NET_NUMBER_OF_DESKTOPS"] @
--- @ > fromJust <$> X.connect >>= \c -> runAtomCacheT . seedAtoms c atoms $ mapM_ (\n -> unsafeLookupAtom n >>= liftIO . print) @
+-- | Preseed the atom cache with `AtomLike`s. Example:
+--
+-- @
+-- {-# LANGUAGE DeriveDataTypeable #-}
+--
+-- import Data.Maybe (fromJust)
+-- import Data.Typeable (Typeable)
+-- import Data.Hashable (Hashable(..))
+-- import Control.Applicative ((\<$\>))
+-- import Control.Monad (forM_, void)
+-- import Control.Monad.IO.Class (liftIO)
+-- import Graphics.XHB (connect)
+-- import Graphics.XHB.AtomCache
+--
+-- data ATOMS = NET_CLIENT_LIST | NET_NUMBER_OF_DESKTOPS
+--     deriving (Eq, Show, Typeable)
+--
+-- instance Hashable ATOMS where
+--     hashWithSalt s = hashWithSalt s . show
+--
+-- instance AtomLike ATOMS where
+--     toAtomName a = '_' : show a
+--
+-- atoms :: [ATOMS]
+-- atoms = [NET_CLIENT_LIST, NET_NUMBER_OF_DESKTOPS]
+--
+-- main :: IO ()
+-- main = do
+--     c <- fromJust \<$\> connect
+--     void $ runAtomCacheT . seedAtoms c atoms $ do
+--         forM_ atoms $ \\a -> unsafeLookupATOM a >>= liftIO . print
+-- @
 seedAtoms :: (AtomLike l, Applicative m, MonadIO m)
           => Connection -> [l] -> AtomCacheT m a -> AtomCacheT m (Either SomeError a)
 seedAtoms _ [] m         = Right <$> m
