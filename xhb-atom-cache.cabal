@@ -6,6 +6,8 @@ license:             BSD2
 license-file:        LICENSE
 author:              Jochen Keil
 maintainer:          Jochen Keil <jochen.keil+xhb-atom@gmail.com>
+homepage:            http://github.com/jotrk/xhb-atom-cache/
+bug-reports:         http://github.com/jotrk/xhb-atom-cache/issues
 
 category:            Graphics
 build-type:          Simple
