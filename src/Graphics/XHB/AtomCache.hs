@@ -64,9 +64,9 @@ instance Hashable AtomId where
 
 type AtomName = String
 
-type AtomState = (HashMap AtomId ATOM, HashMap ATOM AtomId)
+type AtomCache = (HashMap AtomId ATOM, HashMap ATOM AtomId)
 
-newtype AtomCacheT m a = AtomCacheT { unAtomT :: StateT AtomState m a }
+newtype AtomCacheT m a = AtomCacheT { unAtomT :: StateT AtomCache m a }
     deriving (Applicative, Functor, Monad, MonadIO, Typeable)
 
 instance MonadTrans AtomCacheT where
